@@ -1,0 +1,13 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:controls="clr-namespace:Clawd.Controls"
+        x:Class="Clawd.Views.PetWindow"
+        Title="Clawd"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent"
+        SystemDecorations="None"
+        Topmost="True"
+        ShowInTaskbar="False"
+        WindowStartupLocation="Manual">
+    <controls:CrabControl x:Name="Crab" />
+</Window>

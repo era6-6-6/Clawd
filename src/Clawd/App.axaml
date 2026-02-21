@@ -1,0 +1,27 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="Clawd.App">
+    <Application.Styles>
+        <FluentTheme />
+    </Application.Styles>
+
+    <TrayIcon.Icons>
+        <TrayIcons>
+            <TrayIcon ToolTipText="Clawd - Desktop Pet">
+                <TrayIcon.Menu>
+                    <NativeMenu>
+                        <NativeMenuItem Header="Chat with Clawd" Click="OnChat" />
+                        <NativeMenuItemSeparator />
+                        <NativeMenuItem Header="Feed Clawd" Click="OnFeed" />
+                        <NativeMenuItem Header="Pet Clawd" Click="OnPet" />
+                        <NativeMenuItem Header="Make Clawd Dance" Click="OnDance" />
+                        <NativeMenuItem Header="Change Hat" Click="OnChangeHat" />
+                        <NativeMenuItem Header="Toggle Friend" Click="OnToggleFriend" />
+                        <NativeMenuItemSeparator />
+                        <NativeMenuItem Header="Quit" Click="OnQuit" />
+                    </NativeMenu>
+                </TrayIcon.Menu>
+            </TrayIcon>
+        </TrayIcons>
+    </TrayIcon.Icons>
+</Application>

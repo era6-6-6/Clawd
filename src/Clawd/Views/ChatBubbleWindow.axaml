@@ -1,0 +1,106 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Clawd.Views.ChatBubbleWindow"
+        Title="Clawd Chat"
+        Background="Transparent"
+        TransparencyLevelHint="Transparent"
+        SystemDecorations="None"
+        Topmost="True"
+        ShowInTaskbar="False"
+        CanResize="True"
+        MinWidth="300"
+        MinHeight="250"
+        Width="420"
+        Height="500"
+        WindowStartupLocation="Manual">
+
+    <Border Background="#E6141414"
+            BorderBrush="#D77757"
+            BorderThickness="1.5"
+            CornerRadius="12"
+            Padding="0"
+            Margin="8">
+
+        <Grid RowDefinitions="Auto,*,Auto">
+
+            <!-- Header -->
+            <Border Grid.Row="0"
+                    Background="#20D77757"
+                    CornerRadius="12,12,0,0"
+                    Padding="12,8">
+                <Grid ColumnDefinitions="Auto,*,Auto">
+                    <!-- Crab icon placeholder -->
+                    <Border Grid.Column="0"
+                            Width="12" Height="12"
+                            Background="#D77757"
+                            CornerRadius="2"
+                            Margin="0,0,8,0"/>
+                    <TextBlock Grid.Column="1"
+                               Text="Chat with Clawd"
+                               Foreground="#D77757"
+                               FontFamily="monospace"
+                               FontWeight="Bold"
+                               FontSize="12"
+                               VerticalAlignment="Center"/>
+                    <Button Grid.Column="2"
+                            x:Name="CloseBtn"
+                            Content="✕"
+                            FontSize="10"
+                            Foreground="#666"
+                            Background="Transparent"
+                            BorderThickness="0"
+                            Padding="4,2"
+                            Cursor="Hand"
+                            Click="OnClose"/>
+                </Grid>
+            </Border>
+
+            <!-- Messages -->
+            <ScrollViewer Grid.Row="1"
+                          x:Name="MessagesScroll"
+                          Padding="12,8"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+                <StackPanel x:Name="MessagesPanel" Spacing="8" Margin="0,0,0,8"/>
+            </ScrollViewer>
+
+            <!-- Input -->
+            <Border Grid.Row="2"
+                    BorderBrush="#333"
+                    BorderThickness="0,1,0,0"
+                    Padding="8">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBox Grid.Column="0"
+                             x:Name="InputBox"
+                             Watermark="Ask Clawd something..."
+                             FontFamily="monospace"
+                             FontSize="11"
+                             Background="#1a1a1a"
+                             Foreground="#d4d4d4"
+                             BorderBrush="#333"
+                             BorderThickness="1"
+                             CornerRadius="6"
+                             Padding="8,6"
+                             AcceptsReturn="True"
+                             TextWrapping="Wrap"
+                             MaxHeight="80"
+                             KeyDown="OnInputKeyDown"/>
+                    <Button Grid.Column="1"
+                            x:Name="SendBtn"
+                            Content="→"
+                            FontSize="14"
+                            FontWeight="Bold"
+                            Foreground="#D77757"
+                            Background="#1a1a1a"
+                            BorderBrush="#333"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Padding="10,4"
+                            Margin="6,0,0,0"
+                            Cursor="Hand"
+                            Click="OnSend"/>
+                </Grid>
+            </Border>
+        </Grid>
+    </Border>
+</Window>
