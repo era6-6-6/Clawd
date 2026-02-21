@@ -3,18 +3,30 @@ using Avalonia.Markup.Xaml;
 
 namespace Clawd.Views;
 
+public class SettingsResult
+{
+    public string? City { get; init; }
+    public bool CheekyMode { get; init; }
+    public bool Cancelled { get; init; }
+}
+
 public partial class SettingsWindow : Window
 {
     private readonly TextBox _cityBox;
+    private readonly ToggleSwitch _cheekyToggle;
 
-    public SettingsWindow() : this(null) { }
+    public SettingsWindow() : this(null, true) { }
 
-    public SettingsWindow(string? currentCity)
+    public SettingsWindow(string? currentCity, bool cheekyMode = true)
     {
         InitializeComponent();
         _cityBox = this.FindControl<TextBox>("CityBox")!;
+        _cheekyToggle = this.FindControl<ToggleSwitch>("CheekyToggle")!;
+
         if (!string.IsNullOrEmpty(currentCity))
             _cityBox.Text = currentCity;
+
+        _cheekyToggle.IsChecked = cheekyMode;
 
         Opened += (_, _) => _cityBox.Focus();
     }
@@ -26,12 +38,16 @@ public partial class SettingsWindow : Window
 
     private void OnSave(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        Close(_cityBox.Text?.Trim() ?? "");
+        Close(new SettingsResult
+        {
+            City = _cityBox.Text?.Trim() ?? "",
+            CheekyMode = _cheekyToggle.IsChecked == true
+        });
     }
 
     private void OnCancel(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        Close(null);
+        Close(new SettingsResult { Cancelled = true });
     }
 
     private void InitializeComponent()

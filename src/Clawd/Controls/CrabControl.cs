@@ -17,8 +17,12 @@ public class CrabControl : Control
     private int _direction = 1;
     private bool _initialized;
 
-    // The screen work area the crab can roam
+    // The screen work area the crab can roam (current screen)
     public Rect ScreenWorkArea { get; set; }
+
+    // All screen work areas for multi-monitor support
+    private List<Rect> _allScreens = new();
+    public void SetAllScreens(List<Rect> screens) => _allScreens = screens;
 
     // Window dimensions — generous padding for hat, particles, text, friend
     // Layout: [friendPad][crab][friendPad] horizontally, [textPad][hat+crab+legs] vertically
@@ -55,6 +59,27 @@ public class CrabControl : Control
     // Mood
     private readonly Services.MoodService _mood = new();
     public Services.MoodService Mood => _mood;
+
+    // System monitor — subtle visual hints
+    private Services.SystemStats? _sysStats;
+    private int _sweatDrop; // animated sweat offset
+    public void SetSystemStats(Services.SystemStats? stats) => _sysStats = stats;
+
+    // Pomodoro
+    private readonly Services.PomodoroService _pomodoro = new();
+    public Services.PomodoroService Pomodoro => _pomodoro;
+    private string _pomodoroDisplay = "";
+
+    // Cheeky mode — crab walks on screen edges
+    private bool _cheekyMode = true;
+    public bool CheekyMode { get => _cheekyMode; set => _cheekyMode = value; }
+
+    // Edge walking: 0=bottom, 1=right, 2=top, 3=left
+    private int _edge;
+    private double _edgeProgress; // 0..1 along current edge
+    private int _edgeDir = 1; // +1 forward, -1 backward along edge
+    private int _peekDir; // which edge to peek from
+    private double _hideOffset; // how far off-screen
 
     // Animation
     private int _tickCount;
@@ -151,10 +176,11 @@ public class CrabControl : Control
     {
         Walking, Idle, Jumping, Sleeping, Detective, Excited, Eating,
         Dancing, Celebrating, Scared, Bored, Tripping, ChasingMouse,
-        WindowSurfing, Inspecting, BeingPetted, FridayDance, Exploring
+        WindowSurfing, Inspecting, BeingPetted, FridayDance, Exploring,
+        EdgeWalking, Peeking, Hiding
     }
 
-    private enum HatType { None, Cowboy, TopHat, PartyHat, Crown, Beret }
+    private enum HatType { None, Cowboy, TopHat, PartyHat, Crown, Beret, Santa, Pumpkin, Bunny, Witch }
     private enum ParticleType { Footprint, Bubble, Heart, Star, Confetti }
 
     private record struct Particle(
@@ -275,6 +301,63 @@ public class CrabControl : Control
         { 0,1,1,1,1,1,1,1,0,0 },
     };
 
+    // Santa hat — December
+    private static readonly byte[,] HatSanta =
+    {
+        { 0,0,0,0,0,0,0,0,1,0 },
+        { 0,0,0,0,0,0,0,1,1,0 },
+        { 0,0,0,0,0,0,1,1,0,0 },
+        { 0,0,1,1,1,1,1,1,1,0 },
+        { 0,1,1,1,1,1,1,1,1,1 },
+    };
+
+    // Pumpkin hat — October
+    private static readonly byte[,] HatPumpkin =
+    {
+        { 0,0,0,0,1,0,0,0,0 },
+        { 0,0,1,1,1,1,1,0,0 },
+        { 0,1,1,1,1,1,1,1,0 },
+        { 0,1,1,1,1,1,1,1,0 },
+        { 0,0,1,1,1,1,1,0,0 },
+    };
+
+    // Bunny ears — April (Easter)
+    private static readonly byte[,] HatBunny =
+    {
+        { 0,1,0,0,0,0,0,1,0 },
+        { 0,1,0,0,0,0,0,1,0 },
+        { 0,1,0,0,0,0,0,1,0 },
+        { 0,1,1,0,0,0,1,1,0 },
+        { 0,0,1,1,1,1,1,0,0 },
+    };
+
+    // Witch hat — October (alt)
+    private static readonly byte[,] HatWitch =
+    {
+        { 0,0,0,0,1,0,0,0,0 },
+        { 0,0,0,1,1,1,0,0,0 },
+        { 0,0,1,1,1,1,1,0,0 },
+        { 0,1,1,1,1,1,1,1,0 },
+        { 1,1,1,1,1,1,1,1,1 },
+    };
+
+    private static readonly IBrush HatWhite = new SolidColorBrush(Color.Parse("#ffffff"));
+    private static readonly IBrush HatOrange = new SolidColorBrush(Color.Parse("#f97316"));
+    private static readonly IBrush HatGreen = new SolidColorBrush(Color.Parse("#22c55e"));
+    private static readonly IBrush HatPurple = new SolidColorBrush(Color.Parse("#a855f7"));
+
+    private static HatType GetSeasonalHat()
+    {
+        var month = DateTime.Now.Month;
+        return month switch
+        {
+            12 => HatType.Santa,         // December — Santa
+            10 => HatType.Pumpkin,       // October — Pumpkin/Witch
+            4 => HatType.Bunny,          // April — Easter bunny
+            _ => HatType.None            // Other months — no seasonal hat
+        };
+    }
+
     private static readonly byte[,] FriendBody =
     {
         { 0,0,1,1,1,1,1,1,1,1,0,0 },
@@ -302,6 +385,23 @@ public class CrabControl : Control
         };
         _timer.Tick += OnTick;
         _timer.Start();
+
+        _pomodoro.OnTick += remaining =>
+        {
+            var emoji = _pomodoro.State == Services.PomodoroState.Focus ? "\U0001F345" : "\u2615";
+            _pomodoroDisplay = $"{emoji} {remaining.Minutes:0}:{remaining.Seconds:00}";
+        };
+        _pomodoro.OnFocusComplete += () =>
+        {
+            _pomodoroDisplay = "";
+            EnterState(CrabState.Celebrating);
+            for (var i = 0; i < 8; i++) SpawnParticle(ParticleType.Confetti);
+        };
+        _pomodoro.OnBreakComplete += () =>
+        {
+            _pomodoroDisplay = "";
+            EnterState(CrabState.Excited);
+        };
     }
 
     #region Public API
@@ -445,6 +545,34 @@ public class CrabControl : Control
         _contextMenu.Items.Add(chatItem);
         _contextMenu.Items.Add(clipItem);
         _contextMenu.Items.Add(new Separator());
+
+        // Pomodoro
+        if (_pomodoro.State == Services.PomodoroState.Idle)
+        {
+            var pomoItem = new MenuItem { Header = "Start focus \U0001F345 25min" };
+            pomoItem.Click += (_, _) => _pomodoro.StartFocus(25);
+            var pomoShort = new MenuItem { Header = "Quick focus \U0001F345 10min" };
+            pomoShort.Click += (_, _) => _pomodoro.StartFocus(10);
+            var pomoTest = new MenuItem { Header = "Test focus \U0001F345 10s" };
+            pomoTest.Click += (_, _) => { _pomodoro.Stop(); _pomodoro.StartFocusSeconds(10); };
+            _contextMenu.Items.Add(pomoItem);
+            _contextMenu.Items.Add(pomoShort);
+            _contextMenu.Items.Add(pomoTest);
+        }
+        else
+        {
+            var pomoStop = new MenuItem { Header = $"Stop {(_pomodoro.State == Services.PomodoroState.Focus ? "focus" : "break")} \u23F9" };
+            pomoStop.Click += (_, _) => { _pomodoro.Stop(); _pomodoroDisplay = ""; };
+            _contextMenu.Items.Add(pomoStop);
+
+            if (_pomodoro.State == Services.PomodoroState.Focus)
+            {
+                var pomoBreak = new MenuItem { Header = "Take a break \u2615 5min" };
+                pomoBreak.Click += (_, _) => { _pomodoro.Stop(); _pomodoro.StartBreak(5); };
+                _contextMenu.Items.Add(pomoBreak);
+            }
+        }
+        _contextMenu.Items.Add(new Separator());
         _contextMenu.Items.Add(feed);
         _contextMenu.Items.Add(pet);
         _contextMenu.Items.Add(dance);
@@ -460,11 +588,21 @@ public class CrabControl : Control
         };
         _contextMenu.Items.Add(moodItem);
 
+        if (_sysStats != null)
+        {
+            var sysItem = new MenuItem
+            {
+                Header = $"CPU: {_sysStats.CpuPercent:0}%  |  RAM: {_sysStats.MemoryUsedPercent:0}%",
+                IsEnabled = false
+            };
+            _contextMenu.Items.Add(sysItem);
+        }
+
         if (_weatherInfo != null)
         {
             var weatherItem = new MenuItem
             {
-                Header = $"Weather: {_weatherInfo.Description}, {_weatherInfo.Temperature:0}°C",
+                Header = $"{_weatherInfo.Location}: {_weatherInfo.Description}, {_weatherInfo.Temperature:0}°C",
                 IsEnabled = false
             };
             _contextMenu.Items.Add(weatherItem);
@@ -513,6 +651,7 @@ public class CrabControl : Control
         {
             _screenX = ScreenWorkArea.X + ScreenWorkArea.Width * 0.3 + _rng.NextDouble() * ScreenWorkArea.Width * 0.4;
             _screenY = ScreenWorkArea.Bottom - CrabH - 4;
+            _hat = GetSeasonalHat();
             _initialized = true;
         }
 
@@ -536,9 +675,10 @@ public class CrabControl : Control
             if (_tickCount % 200 == 0 && _rng.NextDouble() < 0.3)
                 SpawnParticle(ParticleType.Bubble);
 
-            // Bored check
+            // Bored check — gets bored faster when CPU is idle
+            var boredThreshold = (_sysStats?.CpuPercent ?? 50) < 15 ? 20 : 30;
             if (_state is CrabState.Walking or CrabState.Idle &&
-                (DateTime.UtcNow - _lastInteractionTime).TotalSeconds > 30)
+                (DateTime.UtcNow - _lastInteractionTime).TotalSeconds > boredThreshold)
                 EnterState(CrabState.Bored);
 
             // Friday dance
@@ -570,6 +710,17 @@ public class CrabControl : Control
             if (_state is CrabState.Walking or CrabState.Idle && _rng.NextDouble() < 0.0005)
                 EnterState(CrabState.WindowSurfing);
 
+            // Cheeky behaviors — edge walking, peeking, hiding
+            if (_cheekyMode && _atBottom)
+            {
+                if (_state is CrabState.Walking or CrabState.Idle && _rng.NextDouble() < 0.0008)
+                    EnterState(CrabState.EdgeWalking);
+                if (_state is CrabState.Walking && _rng.NextDouble() < 0.0005)
+                    EnterState(CrabState.Peeking);
+                if (_state is CrabState.Idle && _rng.NextDouble() < 0.0003)
+                    EnterState(CrabState.Hiding);
+            }
+
             // Friend crab
             UpdateFriendCrab();
 
@@ -596,6 +747,9 @@ public class CrabControl : Control
                 case CrabState.BeingPetted: UpdateBeingPetted(); break;
                 case CrabState.FridayDance: UpdateFridayDance(); break;
                 case CrabState.Exploring: UpdateExploring(); break;
+                case CrabState.EdgeWalking: UpdateEdgeWalking(); break;
+                case CrabState.Peeking: UpdatePeeking(); break;
+                case CrabState.Hiding: UpdateHiding(); break;
             }
 
             // Move the window to follow the crab
@@ -689,6 +843,24 @@ public class CrabControl : Control
                 break;
             case CrabState.Exploring:
                 _stateDuration = 180 + _rng.Next(120);
+                break;
+            case CrabState.EdgeWalking:
+                _atBottom = false;
+                _edge = _rng.Next(1, 4); // start on right(1), top(2), or left(3)
+                _edgeProgress = _edge == 2 ? 0.3 + _rng.NextDouble() * 0.4 : _rng.NextDouble();
+                _edgeDir = _rng.NextDouble() < 0.5 ? 1 : -1;
+                _stateDuration = 200 + _rng.Next(300);
+                UpdateEdgePosition();
+                break;
+            case CrabState.Peeking:
+                _atBottom = false;
+                _peekDir = _rng.Next(0, 4); // 0=bottom, 1=right, 2=top, 3=left
+                _hideOffset = CrabW + 10;
+                _stateDuration = 120 + _rng.Next(80);
+                break;
+            case CrabState.Hiding:
+                _stateDuration = 80 + _rng.Next(60);
+                _hideOffset = 0;
                 break;
         }
 
@@ -908,12 +1080,202 @@ public class CrabControl : Control
         }
     }
 
+    private void UpdateEdgeWalking()
+    {
+        if (_tickCount % 10 == 0) _frame = (_frame + 1) % 2;
+        if (_tickCount % 20 == 0) _clawOffset = _clawOffset == 0 ? -1 : 0;
+
+        _edgeProgress += _edgeDir * 0.002;
+
+        // Corner transition
+        if (_edgeProgress > 1) { _edgeProgress = 0; _edge = (_edge + 1) % 4; }
+        else if (_edgeProgress < 0) { _edgeProgress = 1; _edge = (_edge + 3) % 4; }
+
+        UpdateEdgePosition();
+
+        // Back to bottom after duration
+        if (_stateTicks >= _stateDuration || _edge == 0)
+        {
+            _atBottom = true;
+            _screenY = ScreenWorkArea.Bottom - CrabH - 4;
+            _clawOffset = 0;
+            EnterState(CrabState.Walking);
+        }
+    }
+
+    private void UpdateEdgePosition()
+    {
+        var wa = ScreenWorkArea;
+        switch (_edge)
+        {
+            case 0: // bottom
+                _screenX = wa.X + _edgeProgress * (wa.Width - CrabW);
+                _screenY = wa.Bottom - CrabH - 4;
+                break;
+            case 1: // right edge
+                _screenX = wa.Right - CrabW - 4;
+                _screenY = wa.Bottom - _edgeProgress * (wa.Height - CrabH) - CrabH;
+                _direction = -1;
+                break;
+            case 2: // top
+                _screenX = wa.Right - _edgeProgress * (wa.Width - CrabW) - CrabW;
+                _screenY = wa.Y + 4;
+                break;
+            case 3: // left edge
+                _screenX = wa.X + 4;
+                _screenY = wa.Y + _edgeProgress * (wa.Height - CrabH);
+                _direction = 1;
+                break;
+        }
+    }
+
+    private void UpdatePeeking()
+    {
+        // Slide in from edge, pause, slide back out
+        var halfDuration = _stateDuration / 2;
+
+        if (_stateTicks < halfDuration / 3)
+        {
+            // Sliding in
+            _hideOffset = Math.Max(0, _hideOffset - 1.5);
+        }
+        else if (_stateTicks > halfDuration * 5 / 3)
+        {
+            // Sliding back out
+            _hideOffset += 1.5;
+            if (_hideOffset > CrabW + 10)
+            {
+                _atBottom = true;
+                _screenY = ScreenWorkArea.Bottom - CrabH - 4;
+                EnterState(CrabState.Walking);
+                return;
+            }
+        }
+        // else: holding position, peeking
+
+        if (_tickCount % 40 == 0) _clawOffset = _clawOffset == -1 ? 0 : -1;
+
+        var wa = ScreenWorkArea;
+        switch (_peekDir)
+        {
+            case 0: // peek from bottom
+                _screenY = wa.Bottom - CrabH + _hideOffset;
+                break;
+            case 1: // peek from right
+                _screenX = wa.Right - CrabW + _hideOffset;
+                _screenY = wa.Y + wa.Height * 0.3 + _rng.NextDouble() * 0.01;
+                _direction = -1;
+                break;
+            case 2: // peek from top
+                _screenY = wa.Y - _hideOffset + CrabH;
+                break;
+            case 3: // peek from left
+                _screenX = wa.X - _hideOffset;
+                _screenY = wa.Y + wa.Height * 0.5;
+                _direction = 1;
+                break;
+        }
+
+        if (_stateTicks >= _stateDuration)
+        {
+            _atBottom = true;
+            _screenY = wa.Bottom - CrabH - 4;
+            EnterState(CrabState.Walking);
+        }
+    }
+
+    private void UpdateHiding()
+    {
+        // Quickly ducks off screen bottom, then pops back up
+        var quarter = _stateDuration / 4;
+
+        if (_stateTicks < quarter)
+        {
+            _hideOffset += 2;
+            _screenY = ScreenWorkArea.Bottom - CrabH - 4 + _hideOffset;
+        }
+        else if (_stateTicks > _stateDuration - quarter)
+        {
+            _hideOffset = Math.Max(0, _hideOffset - 2);
+            _screenY = ScreenWorkArea.Bottom - CrabH - 4 + _hideOffset;
+        }
+
+        if (_stateTicks >= _stateDuration)
+        {
+            _hideOffset = 0;
+            _atBottom = true;
+            _screenY = ScreenWorkArea.Bottom - CrabH - 4;
+            EnterState(CrabState.Idle);
+        }
+    }
+
     private void BounceOffEdges()
     {
         var minX = ScreenWorkArea.X + 10;
         var maxX = ScreenWorkArea.Right - CrabW - 10;
-        if (_screenX > maxX) { _screenX = maxX; _direction = -1; }
-        else if (_screenX < minX) { _screenX = minX; _direction = 1; }
+
+        if (_screenX > maxX)
+        {
+            // Try crossing to an adjacent screen on the right
+            var adjacent = FindAdjacentScreen(1);
+            if (adjacent != null)
+            {
+                ScreenWorkArea = adjacent.Value;
+                _screenX = ScreenWorkArea.X + 10;
+                _screenY = ScreenWorkArea.Bottom - CrabH - 4;
+            }
+            else
+            {
+                _screenX = maxX;
+                _direction = -1;
+            }
+        }
+        else if (_screenX < minX)
+        {
+            // Try crossing to an adjacent screen on the left
+            var adjacent = FindAdjacentScreen(-1);
+            if (adjacent != null)
+            {
+                ScreenWorkArea = adjacent.Value;
+                _screenX = ScreenWorkArea.Right - CrabW - 10;
+                _screenY = ScreenWorkArea.Bottom - CrabH - 4;
+            }
+            else
+            {
+                _screenX = minX;
+                _direction = 1;
+            }
+        }
+    }
+
+    private Rect? FindAdjacentScreen(int dir)
+    {
+        if (_allScreens.Count <= 1) return null;
+
+        var crabCenterY = _screenY + CrabH / 2.0;
+        Rect? best = null;
+        var bestDist = double.MaxValue;
+
+        foreach (var s in _allScreens)
+        {
+            if (s == ScreenWorkArea) continue;
+
+            // Check vertical overlap — screens must share some vertical range
+            if (crabCenterY < s.Y || crabCenterY > s.Bottom) continue;
+
+            if (dir > 0 && s.X >= ScreenWorkArea.Right - 20)
+            {
+                var dist = s.X - ScreenWorkArea.Right;
+                if (dist < bestDist) { bestDist = dist; best = s; }
+            }
+            else if (dir < 0 && s.Right <= ScreenWorkArea.X + 20)
+            {
+                var dist = ScreenWorkArea.X - s.Right;
+                if (dist < bestDist) { bestDist = dist; best = s; }
+            }
+        }
+
+        return best;
     }
 
     #endregion
@@ -1070,6 +1432,9 @@ public class CrabControl : Control
 
         // Weather accessory (drawn on top)
         DrawWeatherAccessory(ctx, baseX, baseY, flipH);
+
+        // System stress indicators (subtle, don't override personality)
+        DrawSystemHints(ctx, baseX, baseY);
     }
 
     private void DrawStateText(DrawingContext ctx, double baseX, double baseY, bool flipH)
@@ -1095,8 +1460,19 @@ public class CrabControl : Control
             var texts = new[] { "hmm...", "interesting!", "ooh!", "what's this?", "exploring!" };
             DrawFloatingText(ctx, texts[(_stateTicks / 120) % texts.Length], baseX + 2 * PixelSize, baseY - 16, "#88bbdd", 0.9);
         }
+        if (_state == CrabState.EdgeWalking)
+            DrawFloatingText(ctx, "hehe~", baseX + 4 * PixelSize, baseY - 16, "#c084fc", 0.9);
+        if (_state == CrabState.Peeking && _stateTicks > 30 && _stateTicks < 90)
+            DrawFloatingText(ctx, "peek!", baseX + 5 * PixelSize, baseY - 14, "#fb923c", 0.8);
+        if (_state == CrabState.Hiding && _hideOffset > CrabH * 0.3)
+            DrawFloatingText(ctx, "...", baseX + 10 * PixelSize, baseY - 10, "#8899aa", 0.6);
         if (_ouchTicks > 0)
             DrawFloatingText(ctx, "ouch! don't do that, I am fragile!", baseX - 20, baseY - 20, "#ef4444", Math.Min(1.0, _ouchTicks / 30.0));
+
+        // Pomodoro timer display
+        if (!string.IsNullOrEmpty(_pomodoroDisplay))
+            DrawFloatingText(ctx, _pomodoroDisplay, baseX - 4 * PixelSize, baseY - 22,
+                _pomodoro.State == Services.PomodoroState.Focus ? "#ef4444" : "#60a5fa", 1);
     }
 
     private void DrawHat(DrawingContext ctx, double bx, double by, bool flipH)
@@ -1105,7 +1481,9 @@ public class CrabControl : Control
         {
             HatType.Cowboy => HatCowboy, HatType.TopHat => HatTop,
             HatType.PartyHat => HatParty, HatType.Crown => HatCrown,
-            HatType.Beret => HatBeret, _ => null
+            HatType.Beret => HatBeret, HatType.Santa => HatSanta,
+            HatType.Pumpkin => HatPumpkin, HatType.Bunny => HatBunny,
+            HatType.Witch => HatWitch, _ => null
         };
         if (hat == null) return;
 
@@ -1113,7 +1491,9 @@ public class CrabControl : Control
         {
             HatType.Cowboy => HatBrown, HatType.TopHat => HatDark,
             HatType.PartyHat => HatPink, HatType.Crown => HatGold,
-            HatType.Beret => HatRed, _ => HatBrown
+            HatType.Beret => HatRed, HatType.Santa => HatRed,
+            HatType.Pumpkin => HatOrange, HatType.Bunny => HatWhite,
+            HatType.Witch => HatPurple, _ => HatBrown
         };
 
         var hatH = hat.GetLength(0);
@@ -1207,6 +1587,46 @@ public class CrabControl : Control
                 ctx.FillRectangle(snowB, new Rect(baseX + CrabW + 3 * ps, baseY + ((sOff + 4) % 8) * ps, ps, ps));
                 ctx.FillRectangle(snowB, new Rect(baseX + 10 * ps, baseY - 2 * ps + ((sOff + 2) % 6) * ps, ps, ps));
                 break;
+        }
+    }
+
+    private void DrawSystemHints(DrawingContext ctx, double baseX, double baseY)
+    {
+        if (_sysStats == null) return;
+        var ps = PixelSize;
+
+        // CPU > 80%: sweat drop on forehead, animated dripping
+        if (_sysStats.CpuPercent > 80)
+        {
+            _sweatDrop = (_tickCount / 6) % 4;
+            var sweatB = new SolidColorBrush(Color.Parse("#60a5fa"));
+            var sx = baseX + CrabW - 3 * ps;
+            var sy = baseY + ps + _sweatDrop * ps;
+            ctx.FillRectangle(sweatB, new Rect(sx, sy, ps, ps));
+            ctx.FillRectangle(sweatB, new Rect(sx, sy + ps, ps, ps));
+            if (_sweatDrop > 1)
+                ctx.FillRectangle(sweatB, new Rect(sx, sy + 2 * ps, ps, ps));
+        }
+        // CPU > 60%: small blush marks
+        else if (_sysStats.CpuPercent > 60)
+        {
+            if (_tickCount % 30 < 15) // blink
+            {
+                var blushB = new SolidColorBrush(Color.Parse("#ef444440"));
+                ctx.FillRectangle(blushB, new Rect(baseX + 3 * ps, baseY + 8 * ps, ps * 2, ps));
+                ctx.FillRectangle(blushB, new Rect(baseX + 19 * ps, baseY + 8 * ps, ps * 2, ps));
+            }
+        }
+
+        // RAM > 85%: "..." thought bubble (stressed)
+        if (_sysStats.MemoryUsedPercent > 85)
+        {
+            var dotB = new SolidColorBrush(Color.Parse("#94a3b8"));
+            var dx = baseX + CrabW + 2 * ps;
+            var dy = baseY + 2 * ps;
+            var dotPhase = (_tickCount / 20) % 4;
+            for (var i = 0; i < Math.Min(dotPhase, 3); i++)
+                ctx.FillRectangle(dotB, new Rect(dx + i * 2 * ps, dy, ps, ps));
         }
     }
 

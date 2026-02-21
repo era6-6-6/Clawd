@@ -10,14 +10,16 @@ public partial class PetWindow : Window
 {
     private ChatBubbleWindow? _chatWindow;
     private readonly WeatherService? _weather;
+    private readonly SystemMonitorService? _sysMonitor;
 
     public CrabControl? CrabControl => this.FindControl<CrabControl>("Crab");
 
-    public PetWindow() : this(null) { }
+    public PetWindow() : this(null, null) { }
 
-    public PetWindow(WeatherService? weather)
+    public PetWindow(WeatherService? weather, SystemMonitorService? sysMonitor = null)
     {
         _weather = weather;
+        _sysMonitor = sysMonitor;
         InitializeComponent();
 
         Opened += (_, _) =>
@@ -37,6 +39,16 @@ public partial class PetWindow : Window
                 workArea.Width / scaling,
                 workArea.Height / scaling);
 
+            // Multi-monitor: pass all screen work areas
+            var allScreens = new System.Collections.Generic.List<Rect>();
+            foreach (var s in Screens.All)
+            {
+                var sc = s.Scaling;
+                var wa2 = s.WorkingArea;
+                allScreens.Add(new Rect(wa2.X / sc, wa2.Y / sc, wa2.Width / sc, wa2.Height / sc));
+            }
+            crab.SetAllScreens(allScreens);
+
             crab.RequestWindowMove += OnCrabRequestWindowMove;
             crab.RequestOpenChat += OnOpenChat;
             crab.RequestSummarizeClipboard += OnSummarizeClipboard;
@@ -47,6 +59,12 @@ public partial class PetWindow : Window
                 _weather.OnWeatherUpdated += info => crab.SetWeather(info);
             }
 
+            if (_sysMonitor != null)
+            {
+                crab.SetSystemStats(_sysMonitor.Current);
+                _sysMonitor.OnUpdated += stats => crab.SetSystemStats(stats);
+            }
+
             Width = Controls.CrabControl.WindowWidth;
             Height = Controls.CrabControl.WindowHeight;
         };
@@ -54,8 +72,19 @@ public partial class PetWindow : Window
 
     private void OnCrabRequestWindowMove(double screenX, double screenY)
     {
-        var screen = Screens.Primary;
-        var scaling = screen?.Scaling ?? 1.0;
+        // Find which screen the crab is on for correct scaling
+        var scaling = 1.0;
+        foreach (var s in Screens.All)
+        {
+            var sc = s.Scaling;
+            var wa = s.WorkingArea;
+            var r = new Rect(wa.X / sc, wa.Y / sc, wa.Width / sc, wa.Height / sc);
+            if (screenX >= r.X && screenX <= r.Right && screenY >= r.Y - 100 && screenY <= r.Bottom + 100)
+            {
+                scaling = sc;
+                break;
+            }
+        }
         Position = new PixelPoint((int)(screenX * scaling), (int)(screenY * scaling));
     }
 

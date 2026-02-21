@@ -11,6 +11,7 @@ public class App : Application
 {
     private PetWindow? _petWindow;
     private WeatherService? _weather;
+    private SystemMonitorService? _sysMonitor;
 
     public override void Initialize()
     {
@@ -22,7 +23,8 @@ public class App : Application
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
             _weather = new WeatherService();
-            _petWindow = new PetWindow(_weather);
+            _sysMonitor = new SystemMonitorService();
+            _petWindow = new PetWindow(_weather, _sysMonitor);
             desktop.MainWindow = _petWindow;
             desktop.ShutdownMode = ShutdownMode.OnMainWindowClose;
         }
@@ -39,14 +41,18 @@ public class App : Application
     public async void OnSettings(object? sender, EventArgs e)
     {
         if (_petWindow == null || _weather == null) return;
-        var settings = new SettingsWindow(_weather.City);
-        var result = await settings.ShowDialog<string?>(_petWindow);
-        if (result != null)
+        var crab = _petWindow.CrabControl;
+        var settings = new SettingsWindow(_weather.City, crab?.CheekyMode ?? true);
+        var result = await settings.ShowDialog<SettingsResult?>(_petWindow);
+        if (result is { Cancelled: false })
         {
-            if (string.IsNullOrWhiteSpace(result))
+            if (string.IsNullOrWhiteSpace(result.City))
                 _weather.Disable();
             else
-                await _weather.SetCity(result);
+                await _weather.SetCity(result.City);
+
+            if (crab != null)
+                crab.CheekyMode = result.CheekyMode;
         }
     }
 

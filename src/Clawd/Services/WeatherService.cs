@@ -19,6 +19,7 @@ public class WeatherInfo
     public WeatherCondition Condition { get; init; }
     public double Temperature { get; init; }
     public string Description { get; init; } = "";
+    public string Location { get; init; } = "";
 }
 
 public class WeatherService : IDisposable
@@ -34,6 +35,7 @@ public class WeatherService : IDisposable
 
     public WeatherInfo? Current => _lastWeather;
     public string? City => _city;
+    public string? ResolvedLocation { get; private set; }
     public bool IsEnabled => _city != null;
 
     private System.Timers.Timer? _refreshTimer;
@@ -93,6 +95,9 @@ public class WeatherService : IDisposable
                 var first = results[0];
                 _lat = first.GetProperty("latitude").GetDouble();
                 _lon = first.GetProperty("longitude").GetDouble();
+                var name = first.TryGetProperty("name", out var n) ? n.GetString() : _city;
+                var country = first.TryGetProperty("country", out var c) ? c.GetString() : "";
+                ResolvedLocation = string.IsNullOrEmpty(country) ? name : $"{name}, {country}";
             }
 
             var latStr = _lat.Value.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -109,7 +114,8 @@ public class WeatherService : IDisposable
             {
                 Condition = MapCode(code),
                 Temperature = temp,
-                Description = DescribeCode(code)
+                Description = DescribeCode(code),
+                Location = ResolvedLocation ?? _city ?? ""
             };
 
             _lastFetch = DateTime.Now;

@@ -4,7 +4,7 @@
         Title="Clawd Settings"
         Background="#1a1a1a"
         Width="360"
-        Height="280"
+        Height="360"
         CanResize="False"
         WindowStartupLocation="CenterScreen"
         SystemDecorations="BorderOnly">
@@ -55,6 +55,29 @@
                                 Click="OnClear"/>
                     </Grid>
                 </StackPanel>
+            </Border>
+
+            <!-- Cheeky Mode -->
+            <Border Background="#222" CornerRadius="6" Padding="14" BorderBrush="#333" BorderThickness="1">
+                <Grid ColumnDefinitions="*,Auto">
+                    <StackPanel Grid.Column="0" Spacing="2">
+                        <TextBlock Text="Cheeky Mode"
+                                   Foreground="#d4d4d4"
+                                   FontFamily="monospace"
+                                   FontWeight="Bold"
+                                   FontSize="12"/>
+                        <TextBlock Text="Crab walks on screen edges, peeks and hides."
+                                   Foreground="#888"
+                                   FontFamily="monospace"
+                                   FontSize="10"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <ToggleSwitch Grid.Column="1"
+                                  x:Name="CheekyToggle"
+                                  VerticalAlignment="Center"
+                                  OnContent=""
+                                  OffContent=""/>
+                </Grid>
             </Border>
 
             <!-- Buttons -->
