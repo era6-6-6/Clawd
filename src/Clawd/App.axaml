@@ -7,7 +7,7 @@
 
     <TrayIcon.Icons>
         <TrayIcons>
-            <TrayIcon ToolTipText="Clawd - Desktop Pet">
+            <TrayIcon Icon="avares://Clawd/Assets/clawd.png" ToolTipText="Clawd - Desktop Pet">
                 <TrayIcon.Menu>
                     <NativeMenu>
                         <NativeMenuItem Header="Chat with Clawd" Click="OnChat" />
@@ -17,6 +17,8 @@
                         <NativeMenuItem Header="Make Clawd Dance" Click="OnDance" />
                         <NativeMenuItem Header="Change Hat" Click="OnChangeHat" />
                         <NativeMenuItem Header="Toggle Friend" Click="OnToggleFriend" />
+                        <NativeMenuItemSeparator />
+                        <NativeMenuItem Header="Settings" Click="OnSettings" />
                         <NativeMenuItemSeparator />
                         <NativeMenuItem Header="Quit" Click="OnQuit" />
                     </NativeMenu>

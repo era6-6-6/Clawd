@@ -1,0 +1,82 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="Clawd.Views.SettingsWindow"
+        Title="Clawd Settings"
+        Background="#1a1a1a"
+        Width="360"
+        Height="280"
+        CanResize="False"
+        WindowStartupLocation="CenterScreen"
+        SystemDecorations="BorderOnly">
+
+    <Border BorderBrush="#333" BorderThickness="1" CornerRadius="8">
+        <StackPanel Margin="20" Spacing="16">
+
+            <!-- Title -->
+            <TextBlock Text="Clawd Settings"
+                       Foreground="#D77757"
+                       FontFamily="monospace"
+                       FontWeight="Bold"
+                       FontSize="14"/>
+
+            <Border Background="#222" CornerRadius="6" Padding="14" BorderBrush="#333" BorderThickness="1">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Weather"
+                               Foreground="#d4d4d4"
+                               FontFamily="monospace"
+                               FontWeight="Bold"
+                               FontSize="12"/>
+                    <TextBlock Text="Enter your city to show weather near the crab."
+                               Foreground="#888"
+                               FontFamily="monospace"
+                               FontSize="10"
+                               TextWrapping="Wrap"/>
+                    <Grid ColumnDefinitions="*,Auto" Margin="0,4,0,0">
+                        <TextBox Grid.Column="0"
+                                 x:Name="CityBox"
+                                 Watermark="e.g. Prague"
+                                 FontFamily="monospace"
+                                 FontSize="11"
+                                 Background="#2a2a2a"
+                                 Foreground="#d4d4d4"
+                                 BorderBrush="#444"
+                                 Padding="8,6"
+                                 CornerRadius="4"/>
+                        <Button Grid.Column="1"
+                                x:Name="ClearBtn"
+                                Content="Clear"
+                                FontSize="10"
+                                Foreground="#888"
+                                Background="#2a2a2a"
+                                BorderBrush="#444"
+                                Padding="8,5"
+                                Margin="6,0,0,0"
+                                CornerRadius="4"
+                                Click="OnClear"/>
+                    </Grid>
+                </StackPanel>
+            </Border>
+
+            <!-- Buttons -->
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button Content="Cancel"
+                        FontSize="11"
+                        Foreground="#888"
+                        Background="#2a2a2a"
+                        BorderBrush="#444"
+                        Padding="14,5"
+                        CornerRadius="4"
+                        Click="OnCancel"/>
+                <Button Content="Save"
+                        FontSize="11"
+                        Foreground="#1a1a1a"
+                        Background="#D77757"
+                        BorderBrush="#D77757"
+                        Padding="14,5"
+                        CornerRadius="4"
+                        Click="OnSave"/>
+            </StackPanel>
+
+        </StackPanel>
+    </Border>
+</Window>

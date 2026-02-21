@@ -2,17 +2,22 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using Clawd.Controls;
+using Clawd.Services;
 
 namespace Clawd.Views;
 
 public partial class PetWindow : Window
 {
     private ChatBubbleWindow? _chatWindow;
+    private readonly WeatherService? _weather;
 
     public CrabControl? CrabControl => this.FindControl<CrabControl>("Crab");
 
-    public PetWindow()
+    public PetWindow() : this(null) { }
+
+    public PetWindow(WeatherService? weather)
     {
+        _weather = weather;
         InitializeComponent();
 
         Opened += (_, _) =>
@@ -34,6 +39,13 @@ public partial class PetWindow : Window
 
             crab.RequestWindowMove += OnCrabRequestWindowMove;
             crab.RequestOpenChat += OnOpenChat;
+            crab.RequestSummarizeClipboard += OnSummarizeClipboard;
+
+            if (_weather != null)
+            {
+                crab.SetWeather(_weather.Current);
+                _weather.OnWeatherUpdated += info => crab.SetWeather(info);
+            }
 
             Width = Controls.CrabControl.WindowWidth;
             Height = Controls.CrabControl.WindowHeight;
@@ -58,7 +70,6 @@ public partial class PetWindow : Window
 
     private void OnOpenChat(double crabScreenX, double crabScreenY)
     {
-        // If already open, just focus it
         if (_chatWindow is { IsVisible: true })
         {
             _chatWindow.Activate();
@@ -71,11 +82,9 @@ public partial class PetWindow : Window
         _chatWindow = new ChatBubbleWindow();
         _chatWindow.Closed += (_, _) => CrabControl?.SetChatOpen(false);
 
-        // Position above the crab
         var chatX = crabScreenX - 80;
         var chatY = crabScreenY - 460;
 
-        // Clamp to screen
         if (screen != null)
         {
             var wa = screen.WorkingArea;
@@ -86,8 +95,24 @@ public partial class PetWindow : Window
         _chatWindow.Position = new PixelPoint((int)(chatX * scaling), (int)(chatY * scaling));
         _chatWindow.Show();
 
-        // Freeze the crab while chatting
         CrabControl?.SetChatOpen(true);
+    }
+
+    private void OnSummarizeClipboard()
+    {
+        // Open chat and trigger clipboard summary
+        OpenChat();
+        // Small delay to let the chat window open, then send the clipboard command
+        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+        {
+            if (_chatWindow != null)
+            {
+                // The chat window handles "clipboard" as a special command
+                _chatWindow.FindControl<TextBox>("InputBox")!.Text = "summarize clipboard";
+                // Simulate send
+                _chatWindow.OnSend(null, null!);
+            }
+        }, Avalonia.Threading.DispatcherPriority.Background);
     }
 
     private void InitializeComponent()

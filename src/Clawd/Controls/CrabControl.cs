@@ -42,10 +42,19 @@ public class CrabControl : Control
     // Events to move the host window / open chat
     public event Action<double, double>? RequestWindowMove;
     public event Action<double, double>? RequestOpenChat; // screen X, screen Y of crab
+    public event Action? RequestSummarizeClipboard;
 
     // Chat open — freeze the crab in place
     private bool _chatOpen;
-    public void SetChatOpen(bool open) => _chatOpen = open;
+    public void SetChatOpen(bool open) { _chatOpen = open; _mood.OnInteraction(); }
+
+    // Weather
+    private Services.WeatherInfo? _weatherInfo;
+    public void SetWeather(Services.WeatherInfo? info) => _weatherInfo = info;
+
+    // Mood
+    private readonly Services.MoodService _mood = new();
+    public Services.MoodService Mood => _mood;
 
     // Animation
     private int _tickCount;
@@ -297,10 +306,11 @@ public class CrabControl : Control
 
     #region Public API
 
-    public void DoFeed() => EnterState(CrabState.Eating);
+    public void DoFeed() { _mood.OnFed(); EnterState(CrabState.Eating); }
 
     public void DoPet()
     {
+        _mood.OnPetted();
         EnterState(CrabState.BeingPetted);
         for (var i = 0; i < 5; i++) SpawnParticle(ParticleType.Heart);
     }
@@ -429,13 +439,36 @@ public class CrabControl : Control
         var chatItem = new MenuItem { Header = "Chat with Clawd \U0001F4AC" };
         chatItem.Click += (_, _) => RequestOpenChat?.Invoke(_screenX, _atBottom ? ScreenWorkArea.Bottom - CrabH - 4 : _screenY);
 
+        var clipItem = new MenuItem { Header = "Summarize clipboard \U0001F4CB" };
+        clipItem.Click += (_, _) => RequestSummarizeClipboard?.Invoke();
+
         _contextMenu.Items.Add(chatItem);
+        _contextMenu.Items.Add(clipItem);
         _contextMenu.Items.Add(new Separator());
         _contextMenu.Items.Add(feed);
         _contextMenu.Items.Add(pet);
         _contextMenu.Items.Add(dance);
         _contextMenu.Items.Add(hatItem);
         _contextMenu.Items.Add(friendItem);
+
+        // Status
+        _contextMenu.Items.Add(new Separator());
+        var moodItem = new MenuItem
+        {
+            Header = $"Mood: {_mood.MoodText} {_mood.MoodEmoji}",
+            IsEnabled = false
+        };
+        _contextMenu.Items.Add(moodItem);
+
+        if (_weatherInfo != null)
+        {
+            var weatherItem = new MenuItem
+            {
+                Header = $"Weather: {_weatherInfo.Description}, {_weatherInfo.Temperature:0}°C",
+                IsEnabled = false
+            };
+            _contextMenu.Items.Add(weatherItem);
+        }
 
         _contextMenu.Open(this);
     }
@@ -472,6 +505,9 @@ public class CrabControl : Control
         if (ScreenWorkArea.Width < 10) return; // not ready yet
 
         _tickCount++;
+
+        // Update mood every ~5 seconds
+        if (_tickCount % 300 == 0) _mood.Update();
 
         if (!_initialized)
         {
@@ -1003,7 +1039,9 @@ public class CrabControl : Control
             CrabState.Exploring => EyesRight,
             CrabState.Tripping => EyesDizzy,
             CrabState.WindowSurfing => EyesWide,
-            _ => EyesNormal
+            _ => _mood.Current is Services.Mood.Happy ? EyesHappy
+               : _mood.Current is Services.Mood.Sad or Services.Mood.Lonely ? EyesClosed
+               : EyesNormal
         };
         DrawPixels(ctx, eyes, baseX, baseY, flipH, Eye);
 
@@ -1029,6 +1067,9 @@ public class CrabControl : Control
 
         // State-specific floating text
         DrawStateText(ctx, baseX, baseY, flipH);
+
+        // Weather accessory (drawn on top)
+        DrawWeatherAccessory(ctx, baseX, baseY, flipH);
     }
 
     private void DrawStateText(DrawingContext ctx, double baseX, double baseY, bool flipH)
@@ -1101,6 +1142,72 @@ public class CrabControl : Control
                 var brush = px == 2 ? Eye : Body;
                 ctx.FillRectangle(brush, new Rect(fx + c * fs, fy + r * fs, fs, fs));
             }
+    }
+
+    private void DrawWeatherAccessory(DrawingContext ctx, double baseX, double baseY, bool flipH)
+    {
+        if (_weatherInfo == null) return;
+        var ps = PixelSize;
+
+        switch (_weatherInfo.Condition)
+        {
+            case Services.WeatherCondition.Rain:
+            case Services.WeatherCondition.Thunderstorm:
+                // Tiny umbrella held above — 5px wide handle sticking up from claw
+                var ub = new SolidColorBrush(Color.Parse("#60a5fa"));
+                var ux = flipH ? baseX - 2 * ps : baseX + CrabW - 2 * ps;
+                var uy = baseY - 6 * ps;
+                // Canopy
+                for (var c = -2; c <= 2; c++)
+                    ctx.FillRectangle(ub, new Rect(ux + c * ps, uy, ps, ps));
+                for (var c = -1; c <= 1; c++)
+                    ctx.FillRectangle(ub, new Rect(ux + c * ps, uy - ps, ps, ps));
+                // Handle
+                var handleB = new SolidColorBrush(Color.Parse("#94a3b8"));
+                for (var r = 1; r <= 4; r++)
+                    ctx.FillRectangle(handleB, new Rect(ux, uy + r * ps, ps, ps));
+                // Animated raindrops falling around crab
+                var dropB = new SolidColorBrush(Color.Parse("#3b82f680"));
+                var off = (_tickCount / 4) % 6;
+                ctx.FillRectangle(dropB, new Rect(baseX - 3 * ps, baseY + off * ps, ps, ps * 2));
+                ctx.FillRectangle(dropB, new Rect(baseX + CrabW + 2 * ps, baseY + ((off + 3) % 6) * ps, ps, ps * 2));
+                break;
+
+            case Services.WeatherCondition.Clear:
+                // Sunglasses on the eyes
+                var sgB = new SolidColorBrush(Color.Parse("#1a1a1a"));
+                var sgX = baseX + (flipH ? 3 : 5) * ps;
+                var sgY = baseY + 5 * ps;
+                // Left lens
+                ctx.FillRectangle(sgB, new Rect(sgX, sgY, ps * 3, ps * 2));
+                // Right lens
+                ctx.FillRectangle(sgB, new Rect(sgX + 5 * ps, sgY, ps * 3, ps * 2));
+                // Bridge
+                ctx.FillRectangle(sgB, new Rect(sgX + 3 * ps, sgY, ps * 2, ps));
+                // Shine on lenses
+                var shineB = new SolidColorBrush(Color.Parse("#ffffff40"));
+                ctx.FillRectangle(shineB, new Rect(sgX + ps, sgY, ps, ps));
+                ctx.FillRectangle(shineB, new Rect(sgX + 6 * ps, sgY, ps, ps));
+                break;
+
+            case Services.WeatherCondition.Snow:
+                // Scarf around neck area + snowflakes falling
+                var scarfB = new SolidColorBrush(Color.Parse("#ef4444"));
+                var scarfY = baseY + 12 * ps;
+                for (var c = 2; c < 22; c++)
+                    ctx.FillRectangle(scarfB, new Rect(baseX + c * ps, scarfY, ps, ps));
+                // Dangling end
+                var endX = flipH ? baseX + 20 * ps : baseX + 2 * ps;
+                ctx.FillRectangle(scarfB, new Rect(endX, scarfY + ps, ps, ps * 2));
+                ctx.FillRectangle(scarfB, new Rect(endX + ps, scarfY + ps, ps, ps * 2));
+                // Snowflakes
+                var snowB = new SolidColorBrush(Color.Parse("#e2e8f0"));
+                var sOff = (_tickCount / 10) % 8;
+                ctx.FillRectangle(snowB, new Rect(baseX - 4 * ps, baseY + sOff * ps, ps, ps));
+                ctx.FillRectangle(snowB, new Rect(baseX + CrabW + 3 * ps, baseY + ((sOff + 4) % 8) * ps, ps, ps));
+                ctx.FillRectangle(snowB, new Rect(baseX + 10 * ps, baseY - 2 * ps + ((sOff + 2) % 6) * ps, ps, ps));
+                break;
+        }
     }
 
     private void DrawParticles(DrawingContext ctx)
